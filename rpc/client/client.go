@@ -12,8 +12,12 @@ import (
 type Client struct{
 	Addr string
 	Deadline time.Duration
-	Ch  chan uint64
-	DoneCh chan struct{}
+	ReqVoteCh  chan uint64
+	ReqVoteDoneCh chan struct{}
+
+	AppendEntriesCh chan uint64
+	AppendEntriesDoneCh chan struct{}
+
 }
 
 func (client *Client)DoRequestVote(req *pb.RequestVoteReq) error{
@@ -31,11 +35,35 @@ func (client *Client)DoRequestVote(req *pb.RequestVoteReq) error{
 	if err!=nil{
 		log.Fatal(err)
 	}
-	log.Println("get resp:",r.Term,r.VoteGranted)
+	//log.Println("get resp:",r.Term,r.VoteGranted)
 
 	if r.VoteGranted{
-		client.Ch <- r.Term
+		client.ReqVoteCh <- r.Term
 	}
-
 	return nil
 }
+
+func (client *Client)DoAppendEntries(req *pb.AppendEntriesReq)error{
+	conn,err:=grpc.Dial(client.Addr,grpc.WithInsecure(),grpc.WithBlock())
+	if err!=nil{
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	c:=pb.NewRaftServiceClient(conn)
+	ctx,cancel:=context.WithTimeout(context.Background(),time.Second)
+	defer cancel()
+
+	r,err:=c.AppendEntries(ctx,req)
+	if err!=nil{
+		log.Fatal(err)
+	}
+
+	if r.Success{
+		client.AppendEntriesCh<-r.Term
+	}
+	return nil
+}
+
+
+

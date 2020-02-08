@@ -83,29 +83,24 @@ func Loop(){
 
 	}
 	go n.StartRpcServer()
+	go n.receiveVote()
 
-
-
-	for i:=0;i<10;i++{
-		go n.client.DoRequestVote(&pb.RequestVoteReq{
-			Term:                 uint64(i),
-			CandidateId:          2,
-			LastLogIndex:         3,
-			LastLogTerm:          9,
-		})
-
-	}
-	count:=0
+	eachTermTime := time.Second * 5
+	t:=time.NewTicker(eachTermTime)
+	defer t.Stop()
 
 	for {
-		select{
-			case x:=<-n.client.Ch :
-				count++
-				fmt.Println("received: ",x)
-			case <-n.client.DoneCh:
-				break
+		<-t.C
+		fmt.Println("got new round ,start request vote")
+		for i:=0;i<10;i++{
+			go n.client.DoRequestVote(&pb.RequestVoteReq{
+				Term:                 uint64(i),
+				CandidateId:          2,
+				LastLogIndex:         3,
+				LastLogTerm:          9,
+			})
+
 		}
-		fmt.Println(count)
 	}
 }
 
@@ -116,4 +111,32 @@ func main(){
 
 	Loop()
 
+}
+
+func (n *Node)receiveVote(){
+	count:=0
+	for {
+		select{
+		case x:=<-n.client.ReqVoteCh :
+			count++
+			fmt.Println("received: ",x)
+		case <-n.client.ReqVoteDoneCh :
+			break
+		}
+		fmt.Println(count)
+	}
+}
+
+func (n *Node)receiveAppendEntries(){
+	count:=0
+
+	for{
+		select {
+			case x:=<-n.client.AppendEntriesCh:
+				count++
+				fmt.Println("received append entries:",x)
+			case <-n.client.AppendEntriesDoneCh:
+				break
+		}
+	}
 }
