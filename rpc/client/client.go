@@ -10,7 +10,6 @@ import (
 
 
 type Client struct{
-	Addr string
 	Deadline time.Duration
 	ReqVoteCh  chan uint64
 	ReqVoteDoneCh chan struct{}
@@ -20,11 +19,12 @@ type Client struct{
 
 }
 
-func (client *Client)DoRequestVote(req *pb.RequestVoteReq) error{
+func (client *Client)DoRequestVote(sendAddr string,req *pb.RequestVoteReq) error{
 
-	conn,err:=grpc.Dial(client.Addr,grpc.WithInsecure(),grpc.WithBlock())
+	conn,err:=grpc.Dial(sendAddr,grpc.WithInsecure(),grpc.WithBlock())
 	if err!=nil{
 		log.Fatal(err)
+		//todo：处理连接失败的情况
 	}
 	defer conn.Close()
 

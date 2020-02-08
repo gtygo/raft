@@ -37,6 +37,7 @@ type Node struct{
 	Addr string
 	Time time.Duration
 	NodeState State
+	ClusterNodeAddr []string
 	server server.Server
 	client client.Client
 
@@ -75,12 +76,16 @@ func (n *Node)StartRpcServer(){
 
 func Loop(){
 	n:=&Node{
-		Id:          0,
-		Addr:        DefaultAddr,
-		NodeState:   FOLLOWER,
-		server:      server.Server{},
-		client: client.Client{Addr:DefaultAddr,Ch:make(chan uint64,10),DoneCh:make(chan struct{},1)},
-
+		Id:        0,
+		Addr:      DefaultAddr,
+		NodeState: FOLLOWER,
+		server:    server.Server{},
+		client: client.Client{
+			ReqVoteCh:           make(chan uint64,10),
+			ReqVoteDoneCh:       make(chan struct{},1),
+			AppendEntriesCh:     make(chan uint64,10),
+			AppendEntriesDoneCh: make(chan struct{},1),
+		},
 	}
 	go n.StartRpcServer()
 	go n.receiveVote()
@@ -92,8 +97,26 @@ func Loop(){
 	for {
 		<-t.C
 		fmt.Println("got new round ,start request vote")
-		for i:=0;i<10;i++{
-			go n.client.DoRequestVote(&pb.RequestVoteReq{
+		// leader election:
+
+		//选举超时时间
+
+
+
+
+
+		// 选举超时后，变为candidate 进行参选 ，此节点进入参选状态
+		n.NodeState=CANDIDATE
+
+		// 1.自增当前任期号
+		n.CurrentTerm++
+		//todo： 2.为自己投票
+
+		//todo： 3.重置选举超时计时器
+
+		//4. 发送请求投票RPC给所有服务器
+		for i:=0;i<len(n.ClusterNodeAddr);i++{
+			go n.client.DoRequestVote(n.ClusterNodeAddr[i],&pb.RequestVoteReq{
 				Term:                 uint64(i),
 				CandidateId:          2,
 				LastLogIndex:         3,
@@ -113,6 +136,10 @@ func main(){
 
 }
 
+
+
+
+
 func (n *Node)receiveVote(){
 	count:=0
 	for {
@@ -120,6 +147,13 @@ func (n *Node)receiveVote(){
 		case x:=<-n.client.ReqVoteCh :
 			count++
 			fmt.Println("received: ",x)
+			if  x > n.CurrentTerm{
+				n.CurrentTerm=x
+				n.NodeState=FOLLOWER
+			}
+
+
+
 		case <-n.client.ReqVoteDoneCh :
 			break
 		}
