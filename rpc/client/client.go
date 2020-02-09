@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"github.com/gtygo/raft/rpc/pb"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"log"
 	"time"
@@ -34,7 +35,7 @@ func (client *Client) DoRequestVote(sendAddr string, req *pb.RequestVoteReq) err
 		log.Fatal(err)
 	}
 	//log.Println("get resp:",r.Term,r.VoteGranted)
-
+	logrus.Info("start insert into vote channel")
 	if r.VoteGranted {
 		client.ReqVoteCh <- r.Term
 	}
