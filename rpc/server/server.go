@@ -49,6 +49,15 @@ func (s *Server) AppendEntries(ctx context.Context, req *pb.AppendEntriesReq) (*
 	logrus.Info("收到附加日志rpc..... ",req,s.node)
 	s.node.Client.AppendEntriesCh<-0
 
+	if len(req.Entries)!=0{
+		//not heart beat
+		s.node.HandleAppendEntriesInfo(req.Entries)
+
+
+	}
+
+
+
 	return &pb.AppendEntriesResp{
 		Term:    10,
 		Success: true,

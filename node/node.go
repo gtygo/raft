@@ -17,14 +17,8 @@ const (
 
 type State int
 
-type Instruction struct {
-	Type  string
-	Key   string
-	Value string
-}
-
 type LogInfo struct {
-	Ins  Instruction
+	Ins  pb.Instruction
 	Term uint64
 }
 
@@ -36,6 +30,9 @@ type Node struct {
 	voteCount       uint64
 	ClusterNodeAddr []string
 	Client          client.Client
+	ClientReqCh     chan pb.Instruction
+	StateMachine map[string]string
+
 
 	//Persistent state on all servers:
 	CurrentTerm uint64
@@ -58,6 +55,7 @@ func NewNode(addr string,id uint64) *Node {
 		Addr:            addr,
 		NodeState:       FOLLOWER,
 		VotedFor:        0,
+		StateMachine:make(map[string]string,10),
 		ClusterNodeAddr: []string{"127.0.0.1:5001", "127.0.0.1:5002", "127.0.0.1:5003"},
 		Client: client.Client{
 			ReqVoteCh:           make(chan uint64, 10),
@@ -118,11 +116,20 @@ func (n *Node) Loop() {
 		case LEADER:
 			logrus.Infof("now state is leader")
 
-
-			// todo： 接收客户端请求
-
 			//不断发送心跳给follower节点
 			n.boardCastHeartBeat()
+
+			// todo： 接收客户端请求
+			select 	{
+			case x:= <- n.ClientReqCh:
+				
+
+
+
+				
+			}
+
+
 
 		}
 	}
@@ -188,13 +195,13 @@ func (n *Node) receiveAppendEntries() {
 }
 
 //不断发送心跳给其他服务器
-func (n *Node) boardCastHeartBeat() {
+func (n *Node) boardCastHeartBeat( req *pb.AppendEntriesReq,isNeedResp bool) {
 	for i := 0; i < len(n.ClusterNodeAddr); i++ {
 		if n.ClusterNodeAddr[i] == n.Addr {
 			continue
 		}
 		time.Sleep(time.Second * 5)
-		go n.Client.DoAppendEntries(n.ClusterNodeAddr[i], &pb.AppendEntriesReq{})
+		go n.Client.DoAppendEntries(n.ClusterNodeAddr[i], req)
 	}
 }
 
@@ -222,6 +229,24 @@ func handleRequestVoteDoneMessage() {
 
 func handleAppendEntriesMessage(term uint64) {
 
+}
+
+func (n *Node)HandleAppendEntriesInfo(entries []*pb.Instruction,term uint64){
+
+	for _,x:=range entries {
+		//log append
+		n.Log = append(n.Log, LogInfo{
+			Ins:  *x,
+			Term: term,
+		})
+		//change state machine
+
+		if x.Type=="SET"{
+			n.StateMachine[x.Key]=x.Value
+		} else if x.Type=="DEL"{
+			delete(n.StateMachine,x.Key)
+		}
+	}
 }
 
 func Random(l int, r int) int {
