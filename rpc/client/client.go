@@ -15,7 +15,7 @@ type Client struct {
 	ReqVoteDoneCh chan struct{}
 
 	AppendEntriesCh     chan uint64
-	AppendEntriesDoneCh chan struct{}
+	AppendEntriesRespCh chan uint64
 }
 
 func (client *Client) DoRequestVote(sendAddr string, req *pb.RequestVoteReq) error {
@@ -42,7 +42,7 @@ func (client *Client) DoRequestVote(sendAddr string, req *pb.RequestVoteReq) err
 	return nil
 }
 
-func (client *Client) DoAppendEntries(sendAddr string, req *pb.AppendEntriesReq) error {
+func (client *Client) DoAppendEntries(sendAddr string, req *pb.AppendEntriesReq,isNeedResp bool) error {
 	conn, err := grpc.Dial(sendAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatal(err)
@@ -52,6 +52,11 @@ func (client *Client) DoAppendEntries(sendAddr string, req *pb.AppendEntriesReq)
 	c := pb.NewRaftServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+
+	if !isNeedResp{
+		c.AppendEntries(ctx,req)
+		return nil
+	}
 
 	r, err := c.AppendEntries(ctx, req)
 	if err != nil {
@@ -63,4 +68,30 @@ func (client *Client) DoAppendEntries(sendAddr string, req *pb.AppendEntriesReq)
 	}
 
 	return nil
+}
+
+
+func (client *Client) DoClientCommand(sendAddr string, req *pb.RequestVoteReq) (*pb.ClientCommandResp ,error) {
+
+	conn, err := grpc.Dial(sendAddr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatal(err)
+		//todo：处理连接失败的情况
+	}
+	defer conn.Close()
+
+	c := pb.NewRaftServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+	r, err := c.HandleClientCommand(ctx,&pb.ClientCommandReq{
+		Ins:                  &pb.Instruction{
+			Type:                 "SET",
+			Key:                  "A",
+			Value:                "B",
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return r,nil
 }

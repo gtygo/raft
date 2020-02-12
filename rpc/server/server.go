@@ -51,17 +51,27 @@ func (s *Server) AppendEntries(ctx context.Context, req *pb.AppendEntriesReq) (*
 
 	if len(req.Entries)!=0{
 		//not heart beat
-		s.node.HandleAppendEntriesInfo(req.Entries)
-
-
+		logrus.Infof("rpc server received append entries")
+		s.node.HandleAppendEntriesInfo(req.Entries,s.node.CurrentTerm)
 	}
-
-
 
 	return &pb.AppendEntriesResp{
 		Term:    10,
 		Success: true,
 	}, nil
+}
+
+func (s *Server)HandleClientCommand(ctx context.Context,req *pb.ClientCommandReq) (*pb.ClientCommandResp, error){
+	logrus.Info("收到客户端请求rpc..... ")
+
+	s.node.ClientReqCh<-*req.Ins
+	logrus.Info("等待leader处理完成......")
+	<- s.node.ClientReqDoneCh
+	logrus.Infof("逻辑层处理客户端请求已完成")
+	s.node.HandleAppendEntriesInfo([]*pb.Instruction{req.Ins},s.node.CurrentTerm)
+
+
+	return &pb.ClientCommandResp{Success:true}, nil
 }
 
 func StartRpcServer(n *node.Node) {

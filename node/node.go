@@ -31,6 +31,8 @@ type Node struct {
 	ClusterNodeAddr []string
 	Client          client.Client
 	ClientReqCh     chan pb.Instruction
+	ClientReqDoneCh chan struct{}
+	LogRespCount int
 	StateMachine map[string]string
 
 
@@ -55,13 +57,16 @@ func NewNode(addr string,id uint64) *Node {
 		Addr:            addr,
 		NodeState:       FOLLOWER,
 		VotedFor:        0,
+		LogRespCount:    0,
+		ClientReqCh:make(chan pb.Instruction,10),
+		ClientReqDoneCh:make(chan struct{},1),
 		StateMachine:make(map[string]string,10),
 		ClusterNodeAddr: []string{"127.0.0.1:5001", "127.0.0.1:5002", "127.0.0.1:5003"},
 		Client: client.Client{
 			ReqVoteCh:           make(chan uint64, 10),
 			ReqVoteDoneCh:       make(chan struct{}, 1),
 			AppendEntriesCh:     make(chan uint64, 10),
-			AppendEntriesDoneCh: make(chan struct{}, 1),
+			AppendEntriesRespCh: make(chan uint64, 10),
 		},
 	}
 
@@ -117,20 +122,37 @@ func (n *Node) Loop() {
 			logrus.Infof("now state is leader")
 
 			//不断发送心跳给follower节点
-			n.boardCastHeartBeat()
-
 			// todo： 接收客户端请求
 			select 	{
+			//收到了客户端发来的请求
 			case x:= <- n.ClientReqCh:
-				
+				logrus.Infof("逻辑层收到了客户端请求rpc 信号")
+				//发送append entries rpc
+				entries:=make([]*pb.Instruction,0)
+				entries=append(entries,&x)
+				n.boardCastHeartBeat(&pb.AppendEntriesReq{
+					Term:                 n.CurrentTerm,
+					LeaderId:             n.Id,
+					PrevLogIndex:         0,
+					PrevLogTerm:          0,
+					Entries:              entries,
+					LeaderCommit:         0,
+				},true)
+			//收到appendentries 的回复
+			case x:=<-n.Client.AppendEntriesCh:
+				logrus.Infof("leader received append entries log resp: %v",x)
+				n.LogRespCount++
+				//收到follower节点都改变了自身的状态机
+				if n.LogRespCount==2{
+					n.ClientReqDoneCh<- struct{}{}
+				}
 
-
-
-				
+			default:
+				//发送heart beat
+				logrus.Infof("leader send normal heart beat rpc")
+				time.Sleep(time.Second*5)
+				n.boardCastHeartBeat(&pb.AppendEntriesReq{},false)
 			}
-
-
-
 		}
 	}
 }
@@ -144,6 +166,7 @@ func (n *Node) checkCurrentTerm(T uint64) {
 
 func (n *Node) startLeaderElection() {
 	logrus.Infof("start leader election......")
+	n.LogRespCount=0
 
 	// 1.切换状态为候选人
 	n.NodeState = CANDIDATE
@@ -180,28 +203,13 @@ func (n *Node) receiveVote() {
 
 }
 
-func (n *Node) receiveAppendEntries() {
-	logrus.Infof("start listening append entries rpc message....")
-	count := 0
-	for {
-		select {
-		case x := <-n.Client.AppendEntriesCh:
-			handleAppendEntriesMessage(x)
-			count++
-		case <-n.Client.AppendEntriesDoneCh:
-			break
-		}
-	}
-}
-
 //不断发送心跳给其他服务器
 func (n *Node) boardCastHeartBeat( req *pb.AppendEntriesReq,isNeedResp bool) {
 	for i := 0; i < len(n.ClusterNodeAddr); i++ {
 		if n.ClusterNodeAddr[i] == n.Addr {
 			continue
 		}
-		time.Sleep(time.Second * 5)
-		go n.Client.DoAppendEntries(n.ClusterNodeAddr[i], req)
+		go n.Client.DoAppendEntries(n.ClusterNodeAddr[i], req,isNeedResp)
 	}
 }
 
@@ -247,6 +255,11 @@ func (n *Node)HandleAppendEntriesInfo(entries []*pb.Instruction,term uint64){
 			delete(n.StateMachine,x.Key)
 		}
 	}
+
+	logrus.Infof("==== now state machine is :")
+	logrus.Info("logs: ",n.Log)
+	logrus.Info(n.StateMachine)
+
 }
 
 func Random(l int, r int) int {
